@@ -1,0 +1,22 @@
+# Fichaje automático en Sesame. Sin puertos: solo sale a internet (Sesame, Google Calendar, Telegram).
+services:
+  fichaje:
+    build: ./app
+    image: fichaje:local
+    container_name: fichaje
+    user: "1000:1000"
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    mem_limit: 256m
+    pids_limit: 64
+    volumes:
+      - ./config.yml:/config.yml:ro
+      - ./estado:/estado
+    env_file: .env      # SESAME_*, GOOGLE_ICAL_URL, TELEGRAM_*, MODO (prueba|real)
+    environment:
+      - TZ=Europe/Madrid
+    labels:
+      - diun.enable=false   # imagen construida aquí
+    restart: unless-stopped

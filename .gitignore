@@ -1,0 +1,7 @@
+# Datos personales: nunca al repositorio
+.env
+config.yml
+apps-script.gs
+estado/
+NOTAS.md
+__pycache__/

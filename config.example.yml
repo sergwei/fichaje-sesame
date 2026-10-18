@@ -1,0 +1,47 @@
+# Copia este archivo como config.yml y ajústalo. config.yml no se sube a git.
+# Las credenciales NO van aquí: van en .env (ver .env.example).
+zona_horaria: Europe/Madrid
+
+# Minutos al azar (±) que se aplican a cada fichaje para no fichar siempre a la misma hora exacta.
+variacion_minutos: 3
+
+# Horario por día de la semana. Cada tramo es un periodo trabajado; el hueco entre
+# tramos es la pausa (p. ej. la comida), que se ficha como salida y nueva entrada.
+# Un día sin tramos no se ficha.
+horario:
+  lunes:     [["09:00", "14:00"], ["15:00", "18:00"]]
+  martes:    [["09:00", "14:00"], ["15:00", "18:00"]]
+  miercoles: [["09:00", "14:00"], ["15:00", "18:00"]]
+  jueves:    [["09:00", "14:00"], ["15:00", "18:00"]]
+  viernes:   [["08:00", "15:00"]]
+  sabado:    []
+  domingo:   []
+
+# Aviso por Telegram antes de cada fichaje, con botones para cancelar o retrasar.
+# No hace falta responder: se ficha igualmente. false = totalmente automático, sin aviso previo.
+aviso:
+  activo: true
+  minutos_antes: 10
+
+# Mensaje silencioso (sin sonido) tras cada fichaje. Los errores se avisan siempre.
+notificar_fichajes: true
+
+# Días en los que NO se ficha. Basta con que una fuente diga que es libre.
+no_fichar:
+  # Festivos que Sesame marca en "Mis fichajes" (los muestra igual que los fines de semana).
+  # Las vacaciones normalmente NO salen ahí: para eso está el calendario de Google.
+  sesame: true
+  # Festivos oficiales con la librería "holidays", por si Sesame falla.
+  festivos_oficiales:
+    activo: true
+    pais: ES
+    comunidad: ""              # código de comunidad autónoma: MD, CT, VC, GA, AN... ("" = solo nacionales)
+  # Calendario de Google leído por su "Dirección secreta en formato iCal" (GOOGLE_ICAL_URL en .env).
+  # Solo cuentan los eventos de DÍA COMPLETO; los de varios días cuentan todos los días.
+  google_calendar:
+    activo: false
+    # Lista vacía = cuenta cualquier evento de día completo. Si no, solo los que contengan
+    # alguno de estos textos (sin distinguir mayúsculas ni tildes).
+    titulos: []
+  # Fechas sueltas a mano (YYYY-MM-DD), p. ej. festivos locales.
+  fechas: []

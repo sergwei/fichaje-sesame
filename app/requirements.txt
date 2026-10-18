@@ -1,0 +1,15 @@
+anyio==4.15.1
+certifi==2026.10.18
+h11==0.16.0
+holidays==0.106
+httpcore==1.0.9
+httpx==0.28.1
+icalendar==7.3.0
+idna==3.20
+python-dateutil==2.9.0.post0
+PyYAML==6.0.3
+recurring-ical-events==3.8.2
+six==1.17.0
+typing_extensions==4.16.0
+tzdata==2026.5
+x-wr-timezone==2.0.1
