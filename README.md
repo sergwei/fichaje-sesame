@@ -35,7 +35,8 @@ servidor que esté siempre encendido (una Raspberry, un mini PC, un NAS…).
   ```
   Si responde `"sesame1":true`, es el tuyo. Si responde `"sesame2":true`, esta herramienta no sirve tal cual:
   el Sesame nuevo tiene API y SDK oficial ([`sesamehr`](https://pypi.org/project/sesamehr/)).
-- Un bot de Telegram (gratis, se crea con [@BotFather](https://t.me/BotFather)).
+- Recomendado: un bot de Telegram (gratis, se crea en 2 minutos con [@BotFather](https://t.me/BotFather)).
+  Es opcional: sin él ficha igual, pero los avisos (también los de error) solo salen en `docker logs`.
 
 ## Instalación
 
@@ -51,11 +52,14 @@ docker compose up -d --build
 docker logs -f fichaje
 ```
 
-Al arrancar te llega por Telegram "🤖 Fichaje arrancado (MODO PRUEBA)" con el plan del día.
+Al arrancar te llega por Telegram (o sale en `docker logs`) "🤖 Fichaje arrancado (MODO PRUEBA)" con el plan del día.
 Déjalo un día o dos en modo prueba. Cuando los mensajes cuadren con tu horario, pon `MODO=real` en
 `.env` y ejecuta `docker compose up -d`.
 
-### Telegram
+### Telegram (opcional, recomendado)
+
+Si dejas `TELEGRAM_TOKEN` y `TELEGRAM_CHAT` vacíos, funciona igual, pero no te enterarás de si un fichaje
+falla salvo que mires `docker logs fichaje`. Para activarlo:
 
 1. Habla con [@BotFather](https://t.me/BotFather), usa `/newbot` y copia el token en `TELEGRAM_TOKEN`.
 2. Escribe cualquier cosa a tu bot y abre `https://api.telegram.org/bot<TOKEN>/getUpdates`.

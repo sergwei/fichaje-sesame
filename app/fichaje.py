@@ -10,6 +10,8 @@ import logging
 import os
 import random
 import re
+import signal
+import sys
 import time
 import unicodedata
 from zoneinfo import ZoneInfo
@@ -165,9 +167,14 @@ def evento_dia_completo(dia, titulos):
 # --- Telegram ----------------------------------------------------------------
 
 class Telegram:
+    """Opcional: sin TELEGRAM_TOKEN/TELEGRAM_CHAT los mensajes solo van al registro (docker logs)."""
+
     def __init__(self):
-        self.url = f"https://api.telegram.org/bot{os.environ['TELEGRAM_TOKEN']}/"
-        self.chat = int(os.environ["TELEGRAM_CHAT"])
+        token = os.environ.get("TELEGRAM_TOKEN", "").strip()
+        chat = os.environ.get("TELEGRAM_CHAT", "").strip()
+        self.activo = bool(token and chat)
+        self.url = f"https://api.telegram.org/bot{token}/"
+        self.chat = int(chat) if self.activo else None
         self.c = httpx.Client(timeout=60)
 
     def api(self, metodo, **datos):
@@ -176,6 +183,9 @@ class Telegram:
         return r.json()["result"]
 
     def enviar(self, texto, botones=None, silencioso=False):
+        if not self.activo:
+            log.info("[aviso] %s", texto)
+            return None
         datos = {"chat_id": self.chat, "text": texto, "disable_notification": silencioso}
         if botones:
             datos["reply_markup"] = {"inline_keyboard": botones}
@@ -185,6 +195,9 @@ class Telegram:
             log.error("Telegram: %s", e)
 
     def editar(self, msg_id, texto):
+        if not self.activo:
+            log.info("[aviso] %s", texto)
+            return
         try:
             self.api("editMessageText", chat_id=self.chat, message_id=msg_id, text=texto)
         except Exception as e:
@@ -330,6 +343,9 @@ class Fichaje:
     # Telegram entrante
 
     def atender(self, espera):
+        if not self.tg.activo:
+            time.sleep(espera)
+            return
         try:
             updates = self.tg.api("getUpdates", offset=self.st["offset"], timeout=espera,
                                   allowed_updates=["message", "callback_query"])
@@ -418,6 +434,8 @@ class Fichaje:
     def correr(self):
         leer_config()  # falla al arrancar si config.yml está mal
         log.info("Arrancando en modo %s", "REAL" if MODO_REAL else "PRUEBA")
+        if not self.tg.activo:
+            log.warning("Sin Telegram: los avisos (también los de error) solo saldrán en docker logs")
         self.paso()
         self.tg.enviar(f"🤖 Fichaje arrancado ({'REAL' if MODO_REAL else 'MODO PRUEBA'}).\n" + self.resumen())
         while True:
@@ -431,4 +449,6 @@ class Fichaje:
 
 
 if __name__ == "__main__":
+    # Como proceso 1 del contenedor, Python ignora SIGTERM: sin esto `docker stop` espera 10 s y mata.
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     Fichaje().correr()
