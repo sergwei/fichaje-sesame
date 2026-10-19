@@ -5,3 +5,8 @@ apps-script.gs
 estado/
 NOTAS.md
 __pycache__/
+
+# Temporales de editores (pueden contener copias de config.yml o .env)
+*.swp
+*.swo
+*~
