@@ -22,7 +22,8 @@ servidor que esté siempre encendido (una Raspberry, un mini PC, un NAS…).
 - Antes de pulsar comprueba si ya estás dentro o fuera, para no fichar dos veces si lo haces a mano.
   Después de pulsar comprueba en Sesame que se ha registrado.
 - Por Telegram: aviso opcional antes de fichar con botones (❌ No fichar / ⏰ +15 min / 🚫 Nada más hoy),
-  mensaje silencioso tras fichar y aviso si algo falla. Comandos: `/hoy`, `/estado`, `/nofichar`, `/reanudar`.
+  mensaje silencioso tras fichar, aviso si algo falla y resumen semanal de lo registrado en Sesame.
+  Comandos: `/hoy`, `/semana`, `/estado`, `/nofichar`, `/reanudar`.
 - **Modo prueba** (por defecto): hace todo, pero en vez de fichar te dice lo que habría hecho.
 
 ## Requisitos

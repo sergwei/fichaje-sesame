@@ -30,6 +30,8 @@ UA = "Mozilla/5.0 (X11; Linux x86_64; rv:131.0) Gecko/20100101 Firefox/131.0"
 DIAS = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
 PERDIDO_TRAS = dt.timedelta(minutes=15)  # pasado este margen ya no se ficha (p. ej. tras un apagón)
 REINTENTOS = 3
+LATIDO = "/tmp/latido"  # el bucle lo actualiza; si se queda viejo, el contenedor sale "unhealthy"
+DIAS_CORTOS = ["lun", "mar", "mié", "jue", "vie", "sáb", "dom"]
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("fichaje")
@@ -107,6 +109,32 @@ class Sesame:
                 titulo = re.search(r'_title="([^"]*)"', resto)
                 return titulo.group(1) if titulo else "festivo"
         raise Fallo(f"el día {dia} no aparece en Sesame")
+
+    def dias(self, desde, hasta):
+        """Lo que Sesame tiene registrado entre dos fechas: {fecha: {"horas", "fichajes", "festivo"}}."""
+        self.entrar()
+        if not self.usuario:
+            raise Fallo("no encuentro mi id de usuario en Sesame")
+        meses = sorted({(d.year, d.month) for d in (desde, hasta)})
+        res = {}
+        for año, mes in meses:
+            html = self.c.get(f"{PANEL}/admin/users/checks/{self.usuario}/{año}-{mes:02d}").text
+            for trozo in html.split('<li class="margin-top-10')[1:]:
+                num = re.match(r' ?">[^<]*?(\d+) de ', trozo)
+                barra = re.search(r'<ul class="bar ([^"]*)"([^>]*)>', trozo)
+                if not num or not barra:
+                    continue
+                dia = dt.date(año, mes, int(num.group(1)))
+                if not desde <= dia <= hasta:
+                    continue
+                titulo = re.search(r'_title="([^"]*)"', barra.group(2))
+                horas = re.search(r"Horas registradas ([\d:]+)", trozo)
+                res[dia] = {
+                    "festivo": (titulo.group(1) if titulo else "festivo") if "holiday" in barra.group(1).split() else None,
+                    "horas": horas.group(1) if horas else None,
+                    "fichajes": re.findall(r"<strong>(\d\d:\d\d)</strong>", trozo),
+                }
+        return res
 
     @staticmethod
     def boton(html):
@@ -289,6 +317,9 @@ class Fichaje:
 
     def paso(self):
         ahora = self.ahora()
+        with open(LATIDO, "w") as f:  # para el HEALTHCHECK del contenedor
+            f.write(ahora.isoformat())
+        self.resumen_semanal_si_toca(ahora)
         if self.st["dia"] != ahora.date().isoformat():
             self.planificar(ahora.date())
         aviso = dt.timedelta(minutes=self.st.get("aviso_min", 10))
@@ -427,9 +458,55 @@ class Fichaje:
                 self.tg.enviar("🟢 Ahora estás DENTRO en Sesame" if dentro else "⚪ Ahora estás FUERA en Sesame")
             except Exception as e:
                 self.tg.enviar(f"🛑 No puedo leer Sesame: {e}")
+        elif cmd == "/semana":
+            self.tg.enviar(self.texto_semana(self.ahora().date()))
         elif cmd in ("/ayuda", "/start"):
-            self.tg.enviar("/hoy plan de hoy\n/estado dentro o fuera en Sesame\n"
+            self.tg.enviar("/hoy plan de hoy\n/semana lo registrado en Sesame esta semana\n/estado dentro o fuera en Sesame\n"
                            "/nofichar cancela lo que queda de hoy\n/reanudar deshace /nofichar")
+
+    # Resumen semanal
+
+    def resumen_semanal_si_toca(self, ahora):
+        cfg = (leer_config().get("resumen_semanal") or {})
+        if not cfg.get("activo"):
+            return
+        dia = DIAS.index(cfg.get("dia", "viernes"))
+        hora = dt.time.fromisoformat(str(cfg.get("hora", "17:00")))
+        hoy = ahora.date().isoformat()
+        if ahora.weekday() != dia or ahora.time() < hora or self.st.get("resumen_enviado") == hoy:
+            return
+        self.st["resumen_enviado"] = hoy
+        self.guardar()
+        self.tg.enviar(self.texto_semana(ahora.date()))
+
+    def texto_semana(self, hoy):
+        """Lo que Sesame tiene registrado de lunes a hoy, con avisos si algo no cuadra."""
+        lunes = hoy - dt.timedelta(days=hoy.weekday())
+        try:
+            dias = self.sesame.dias(lunes, hoy)
+        except Exception as e:
+            return f"🛑 No puedo leer la semana en Sesame: {e}"
+        horario = leer_config()["horario"]
+        lineas, total, avisos = [], 0, 0
+        for d in sorted(dias):
+            info = dias[d]
+            trabaja = bool(horario.get(DIAS[d.weekday()]))
+            nombre = f"{DIAS_CORTOS[d.weekday()]} {d.day}"
+            if info["fichajes"]:
+                h, m = map(int, (info["horas"] or "0:00").split(":"))
+                total += h * 60 + m
+                marca = "" if len(info["fichajes"]) % 2 == 0 else " ⚠️ falta una salida"
+                avisos += bool(marca)
+                lineas.append(f"{nombre}: {' '.join(info['fichajes'])} · {info['horas'] or '?'} h{marca}")
+            elif info["festivo"]:
+                if trabaja:
+                    lineas.append(f"{nombre}: 🌴 {info['festivo']}")
+            elif trabaja and d < hoy:
+                avisos += 1
+                lineas.append(f"{nombre}: ⚠️ sin fichajes")
+        cabecera = f"📊 Semana del {lunes:%d/%m} (según Sesame)"
+        pie = f"Total: {total // 60}:{total % 60:02d} h" + ("" if avisos == 0 else f" · {avisos} cosa(s) a revisar")
+        return "\n".join([cabecera, *lineas, pie])
 
     def siguiente_espera(self):
         """Segundos hasta lo próximo que haya que hacer (máx. 25, para el sondeo de Telegram)."""
