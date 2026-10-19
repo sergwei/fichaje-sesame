@@ -26,6 +26,13 @@ aviso:
 # Mensaje silencioso (sin sonido) tras cada fichaje. Los errores se avisan siempre.
 notificar_fichajes: true
 
+# Ubicación que se envía con cada fichaje: fija, la que pongas aquí (p. ej. la de tu casa si
+# teletrabajas). Déjala vacía para fichar sin ubicación. Para sacarla: Google Maps → clic derecho
+# en el sitio → copiar las coordenadas (la primera cifra es la latitud).
+ubicacion:
+  latitud:
+  longitud:
+
 # Días en los que NO se ficha. Basta con que una fuente diga que es libre.
 no_fichar:
   # Festivos que Sesame marca en "Mis fichajes" (los muestra igual que los fines de semana).

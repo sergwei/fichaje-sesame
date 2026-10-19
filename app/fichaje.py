@@ -51,7 +51,19 @@ def leer_config():
         for ini, fin in cfg["horario"].get(dia) or []:
             if dt.time.fromisoformat(ini) >= dt.time.fromisoformat(fin):
                 raise ValueError(f"{dia}: tramo {ini}-{fin} al revés")
+    ubicacion(cfg)  # valida las coordenadas al leer
     return cfg
+
+
+def ubicacion(cfg):
+    """(latitud, longitud) fijas de config.yml, o None si no se han puesto."""
+    u = cfg.get("ubicacion") or {}
+    if u.get("latitud") is None and u.get("longitud") is None:
+        return None
+    lat, lon = float(u["latitud"]), float(u["longitud"])
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        raise ValueError(f"ubicación fuera de rango: {lat}, {lon}")
+    return lat, lon
 
 
 # --- Sesame -----------------------------------------------------------------
@@ -112,8 +124,10 @@ class Sesame:
     def estado(self):
         return self.boton(self.entrar())
 
-    def fichar(self, tipo):
+    def fichar(self, tipo, coordenadas=None):
         dentro, href = self.estado()
+        if coordenadas:  # igual que hace la web con la geolocalización: .../check_panel/1/<lat>/<lon>
+            href += "/{:.7f}/{:.7f}".format(*coordenadas)
         if tipo == "entrada" and dentro:
             return "ya estabas dentro, no hago nada"
         if tipo == "salida" and not dentro:
@@ -313,7 +327,7 @@ class Fichaje:
 
     def ejecutar(self, e):
         try:
-            resultado = self.sesame.fichar(e["tipo"])
+            resultado = self.sesame.fichar(e["tipo"], ubicacion(leer_config()))
         except Exception as ex:
             e["intentos"] += 1
             log.error("Fallo al fichar %s: %s", e["tipo"], ex)

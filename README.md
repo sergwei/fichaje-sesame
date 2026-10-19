@@ -13,6 +13,7 @@ servidor que esté siempre encendido (una Raspberry, un mini PC, un NAS…).
 
 - Ficha **entrada y salida** a las horas de `config.yml`, con unos minutos de variación al azar.
   Las pausas (p. ej. la comida) se fichan como salida y nueva entrada.
+- Opcionalmente envía una ubicación fija configurada (la de donde trabajas).
 - **No ficha** si el día es libre según cualquiera de estas fuentes:
   - los festivos que marca Sesame en "Mis fichajes";
   - los festivos oficiales (librería [`holidays`](https://pypi.org/project/holidays/), nacionales + comunidad autónoma);
@@ -101,8 +102,9 @@ y antes de cada fichaje, así que los cambios no necesitan reiniciar.
   Corre sin root, con el sistema de archivos de solo lectura, sin capacidades y con límites de memoria y procesos.
 - La contraseña de Sesame solo está en `.env`. Protégelo con `chmod 600`.
 - Los registros (`docker logs`) no muestran ni el token de Telegram ni la dirección secreta del calendario.
-- Los fichajes automáticos se hacen **sin ubicación**. Si normalmente fichas desde el móvil con GPS, tu
-  empresa verá esa diferencia.
+- Por defecto los fichajes se hacen **sin ubicación**. Si quieres, puedes poner en `config.yml` una ubicación
+  fija (la de donde trabajas) y se enviará siempre esa misma. No es la posición real de tu móvil: ponla
+  solo si es de verdad donde trabajas.
 - Sesame registra la IP desde la que fichas: será la de tu servidor.
 
 ## Cómo funciona por dentro
