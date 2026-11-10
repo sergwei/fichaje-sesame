@@ -18,12 +18,14 @@ servidor que esté siempre encendido (una Raspberry, un mini PC, un NAS…).
   - los festivos que marca Sesame en "Mis fichajes";
   - los festivos oficiales (librería [`holidays`](https://pypi.org/project/holidays/), nacionales + comunidad autónoma);
   - eventos de día completo de un calendario de Google (vacaciones);
-  - fechas sueltas puestas a mano.
+  - fechas sueltas puestas a mano en `config.yml` o desde Telegram con `/libre`.
 - Antes de pulsar comprueba si ya estás dentro o fuera, para no fichar dos veces si lo haces a mano.
   Después de pulsar comprueba en Sesame que se ha registrado.
 - Por Telegram: aviso opcional antes de fichar con botones (❌ No fichar / ⏰ +15 min / 🚫 Nada más hoy),
   mensaje silencioso tras fichar, aviso si algo falla y resumen semanal de lo registrado en Sesame.
-  Comandos: `/hoy`, `/semana`, `/estado`, `/nofichar`, `/reanudar`.
+  Comandos: `/hoy`, `/semana`, `/estado`, `/nofichar`, `/reanudar`, y para días sueltos sin fichar
+  `/libre <fecha> [motivo]` (2026-11-11, 11/11, mañana, miércoles…), `/quitar <fecha>` y `/libres`.
+  Solo atiende al chat de `TELEGRAM_CHAT`; los días se guardan en `estado/` y se borran solos al pasar.
 - **Modo prueba** (por defecto): hace todo, pero en vez de fichar te dice lo que habría hecho.
 
 ## Requisitos
