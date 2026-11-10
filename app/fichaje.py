@@ -171,8 +171,11 @@ class Sesame:
 
 # --- Días libres ---------------------------------------------------------------
 
-def motivo_libre(dia, cfg, sesame):
-    """Texto con el motivo si ese día no se ficha; None si se trabaja."""
+def motivo_libre(dia, cfg, sesame, libres=None):
+    """Texto con el motivo si ese día no se ficha; None si se trabaja.
+    `libres` son los días puestos por Telegram con /libre: {"AAAA-MM-DD": "motivo"}."""
+    if libres and dia.isoformat() in libres:
+        return f"/libre: {libres[dia.isoformat()] or 'sin motivo'}"
     nf = cfg.get("no_fichar") or {}
     if dia.isoformat() in {str(f) for f in nf.get("fechas") or []}:
         return "fecha puesta a mano en config.yml"
@@ -203,6 +206,31 @@ def evento_dia_completo(dia, titulos):
         titulo = str(ev.get("SUMMARY", "(sin título)"))
         if not claves or any(c in norm(titulo) for c in claves):
             return titulo
+    return None
+
+
+def leer_fecha(texto, hoy):
+    """Fecha de un comando: AAAA-MM-DD, DD/MM, DD/MM/AAAA, hoy, mañana o un día de la semana
+    (el próximo, contando hoy). None si no se entiende."""
+    t = norm(texto.strip())
+    if t == "hoy":
+        return hoy
+    if t == "manana":
+        return hoy + dt.timedelta(days=1)
+    if t in DIAS:
+        return hoy + dt.timedelta(days=(DIAS.index(t) - hoy.weekday()) % 7)
+    try:
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", t):
+            return dt.date.fromisoformat(t)
+        m = re.fullmatch(r"(\d{1,2})/(\d{1,2})(?:/(\d{4}))?", t)
+        if m:
+            d, mes, año = int(m.group(1)), int(m.group(2)), m.group(3)
+            fecha = dt.date(int(año) if año else hoy.year, mes, d)
+            if not año and fecha < hoy:  # "5/1" en diciembre es el año que viene
+                fecha = fecha.replace(year=hoy.year + 1)
+            return fecha
+    except ValueError:
+        return None
     return None
 
 
@@ -272,10 +300,12 @@ class Fichaje:
     def planificar(self, dia):
         cfg = leer_config()
         self.st.update(dia=dia.isoformat(), libre=None, eventos=[])
+        # Los días de /libre ya pasados se borran solos.
+        self.st["libres"] = {f: m for f, m in self.st.get("libres", {}).items() if f >= dia.isoformat()}
         tramos = cfg["horario"].get(DIAS[dia.weekday()]) or []
         if tramos:
             try:
-                self.st["libre"] = motivo_libre(dia, cfg, self.sesame)
+                self.st["libre"] = motivo_libre(dia, cfg, self.sesame, self.st["libres"])
             except Exception as e:
                 self.tg.enviar(f"⚠️ No he podido comprobar si hoy es día libre ({e}). "
                                "Si no trabajas, cancela cada fichaje desde el aviso.")
@@ -341,7 +371,8 @@ class Fichaje:
         e["estado"] = "avisado"
         libre = None
         try:
-            libre = motivo_libre(dt.date.fromisoformat(self.st["dia"]), leer_config(), self.sesame)
+            libre = motivo_libre(dt.date.fromisoformat(self.st["dia"]), leer_config(), self.sesame,
+                                 self.st.get("libres"))
         except Exception as ex:
             log.warning("No pude recomprobar el día libre: %s", ex)
         if libre:  # p. ej. se añadieron vacaciones para hoy después de planificar
@@ -439,19 +470,21 @@ class Fichaje:
     def comando(self, m):
         if m.get("chat", {}).get("id") != self.tg.chat:
             return
-        cmd = (m.get("text") or "").split("@")[0].strip().lower()
-        if cmd == "/hoy":
+        partes = (m.get("text") or "").split()
+        cmd = partes[0].split("@")[0].lower() if partes else ""
+        args = partes[1:]
+        if cmd == "/libre":
+            self.cmd_libre(args)
+        elif cmd == "/quitar":
+            self.cmd_quitar(args)
+        elif cmd == "/libres":
+            self.tg.enviar(self.texto_libres())
+        elif cmd == "/hoy":
             self.tg.enviar(self.resumen())
         elif cmd == "/nofichar":
             self.cancelar_resto("🚫 Hoy no ficho nada más. /reanudar para deshacerlo.")
         elif cmd == "/reanudar":
-            ahora = self.ahora()
-            n = 0
-            for e in self.st["eventos"]:
-                if e["estado"] == "cancelado" and dt.datetime.fromisoformat(e["hora"]) > ahora:
-                    e.update(estado="pendiente", msg=None)
-                    n += 1
-            self.tg.enviar(f"▶️ Reanudados {n} fichajes.\n" + self.resumen())
+            self.reanudar()
         elif cmd == "/estado":
             try:
                 dentro, _ = self.sesame.estado()
@@ -462,7 +495,68 @@ class Fichaje:
             self.tg.enviar(self.texto_semana(self.ahora().date()))
         elif cmd in ("/ayuda", "/start"):
             self.tg.enviar("/hoy plan de hoy\n/semana lo registrado en Sesame esta semana\n/estado dentro o fuera en Sesame\n"
-                           "/nofichar cancela lo que queda de hoy\n/reanudar deshace /nofichar")
+                           "/nofichar cancela lo que queda de hoy\n/reanudar deshace /nofichar\n"
+                           "/libre <fecha> [motivo] ese día no se ficha (fecha: 2026-11-11, 11/11, mañana, miércoles…)\n"
+                           "/quitar <fecha> vuelve a fichar ese día\n/libres días puestos con /libre")
+
+    # Días libres puestos por Telegram
+
+    def texto_libres(self):
+        libres = self.st.get("libres") or {}
+        if not libres:
+            return "No hay días puestos con /libre."
+        lineas = [f"🌴 {DIAS_CORTOS[dt.date.fromisoformat(f).weekday()]} {f}: {m or 'sin motivo'}"
+                  for f, m in sorted(libres.items())]
+        return "Días sin fichar puestos con /libre:\n" + "\n".join(lineas)
+
+    def cmd_libre(self, args):
+        hoy = self.ahora().date()
+        fecha = leer_fecha(args[0], hoy) if args else None
+        if not fecha:
+            self.tg.enviar("Uso: /libre <fecha> [motivo]\nEj.: /libre miércoles huelga · /libre 24/12 · /libre 2026-12-31")
+            return
+        if fecha < hoy or fecha > hoy + dt.timedelta(days=366):
+            self.tg.enviar(f"⚠️ {fecha} no vale: tiene que ser de hoy a un año vista.")
+            return
+        motivo = " ".join(args[1:])[:100]
+        self.st.setdefault("libres", {})[fecha.isoformat()] = motivo
+        self.guardar()
+        log.info("/libre %s (%s)", fecha, motivo)
+        nombre = f"{DIAS[fecha.weekday()]} {fecha:%d/%m/%Y}".replace("miercoles", "miércoles").replace("sabado", "sábado")
+        if fecha == hoy and self.st.get("dia") == hoy.isoformat():
+            self.cancelar_resto(f"🌴 Hoy ({nombre}) no ficho nada más{': ' + motivo if motivo else ''}. "
+                                f"/quitar hoy para deshacerlo.")
+        else:
+            self.tg.enviar(f"🌴 El {nombre} no ficho{': ' + motivo if motivo else ''}.\n/quitar {fecha} para deshacerlo.")
+
+    def cmd_quitar(self, args):
+        hoy = self.ahora().date()
+        fecha = leer_fecha(args[0], hoy) if args else None
+        if not fecha:
+            self.tg.enviar("Uso: /quitar <fecha>\n" + self.texto_libres())
+            return
+        if self.st.get("libres", {}).pop(fecha.isoformat(), None) is None:
+            self.tg.enviar(f"El {fecha} no estaba puesto con /libre.\n" + self.texto_libres())
+            return
+        self.guardar()
+        log.info("/quitar %s", fecha)
+        self.tg.enviar(f"▶️ El {fecha} vuelvo a fichar con normalidad.")
+        if fecha == hoy and self.st.get("dia") == hoy.isoformat():
+            if (self.st.get("libre") or "").startswith("/libre:"):
+                self.planificar(hoy)  # el día se planificó como libre: rehacer el plan (lo ya pasado sale omitido)
+                self.tg.enviar(self.resumen())
+            else:
+                self.reanudar()
+
+    def reanudar(self):
+        ahora = self.ahora()
+        n = 0
+        for e in self.st["eventos"]:
+            if e["estado"] == "cancelado" and dt.datetime.fromisoformat(e["hora"]) > ahora:
+                e.update(estado="pendiente", msg=None)
+                n += 1
+        self.guardar()
+        self.tg.enviar(f"▶️ Reanudados {n} fichajes.\n" + self.resumen())
 
     # Resumen semanal
 
