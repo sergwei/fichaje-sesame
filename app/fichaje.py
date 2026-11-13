@@ -68,6 +68,23 @@ def ubicacion(cfg):
     return lat, lon
 
 
+def minutos_horario(tramos):
+    """Minutos de trabajo de un día según sus tramos de config.yml (8:30 de L a J y 6:00 el V con el horario de Sergio)."""
+    total = 0
+    for ini, fin in tramos or []:
+        a, b = dt.time.fromisoformat(ini), dt.time.fromisoformat(fin)
+        total += (b.hour * 60 + b.minute) - (a.hour * 60 + a.minute)
+    return total
+
+
+def minutos_trabajados(fichajes, ahora):
+    """Minutos entre parejas entrada/salida ("HH:MM", en orden). Si falta la última salida, cuenta hasta `ahora`."""
+    m = [int(h[:2]) * 60 + int(h[3:]) for h in fichajes]
+    if len(m) % 2:
+        m.append(ahora.hour * 60 + ahora.minute)
+    return sum(b - a for a, b in zip(m[::2], m[1::2]))
+
+
 # --- Sesame -----------------------------------------------------------------
 
 class Sesame:
@@ -378,6 +395,7 @@ class Fichaje:
         if libre:  # p. ej. se añadieron vacaciones para hoy después de planificar
             self.cancelar_resto(f"🌴 Cancelo lo que queda de hoy: {libre}")
             return
+        self.ajustar_salida(e)
         if not self.st.get("aviso_activo", True):
             return
         prueba = " (MODO PRUEBA)" if not MODO_REAL else ""
@@ -386,6 +404,38 @@ class Fichaje:
             [[{"text": "❌ No fichar", "callback_data": f"no:{i}"},
               {"text": "⏰ +15 min", "callback_data": f"mas:{i}"}],
              [{"text": "🚫 Nada más hoy", "callback_data": "hoy"}]])
+
+    def ajustar_salida(self, e):
+        """Última salida del día: la pone cuando lo fichado hoy en Sesame cumple la jornada del horario
+        (suma de tramos: 8:30 de L a J, 6:00 el V). Si entraste 5 min antes, sales 5 min antes; si la comida
+        fue más larga, más tarde (como mucho max_retraso_minutos). Si Sesame no responde, se deja la hora prevista."""
+        if e["tipo"] != "salida" or any(x is not e and x["estado"] in ("pendiente", "avisado")
+                                         and x["hora"] > e["hora"] for x in self.st["eventos"]):
+            return  # no es la última salida (p. ej. la de comer)
+        cfg = leer_config()
+        jc = cfg.get("jornada_completa") or {}
+        ahora = self.ahora()
+        jornada = minutos_horario(cfg["horario"].get(DIAS[ahora.weekday()]))
+        if not jornada or not jc.get("activo", True):
+            return
+        try:
+            fichajes = (self.sesame.dias(ahora.date(), ahora.date()).get(ahora.date()) or {}).get("fichajes")
+        except Exception as ex:
+            log.warning("No pude leer las horas de hoy en Sesame: %s", ex)
+            return
+        if not fichajes or len(fichajes) % 2 == 0:
+            return  # no estás dentro según Sesame: no hay nada que ajustar
+        # +1 min de margen: Sesame cuenta segundos y los fichajes se ven redondeados al minuto.
+        falta = jornada + 1 - minutos_trabajados(fichajes, ahora)
+        prevista = dt.datetime.fromisoformat(e["hora"])
+        maximo = int(jc.get("max_retraso_minutos", 30))
+        nueva = max(ahora + dt.timedelta(minutes=falta), ahora)
+        nueva = min(nueva.replace(second=random.randint(0, 59)), prevista + dt.timedelta(minutes=maximo))
+        e["hora"] = nueva.isoformat()
+        log.info("Salida ajustada de %s a %s (jornada %s min)", prevista.strftime("%H:%M"), nueva.strftime("%H:%M"), jornada)
+        if ahora + dt.timedelta(minutes=falta) > nueva + dt.timedelta(minutes=1):
+            self.tg.enviar(f"⚠️ Hoy no llegas a la jornada: salgo a las {nueva:%H:%M} (retraso máximo "
+                           f"{maximo} min) y aun así faltarán minutos. Revisa los fichajes en Sesame.")
 
     def ejecutar(self, e):
         try:

@@ -26,6 +26,15 @@ aviso:
 # Mensaje silencioso (sin sonido) tras cada fichaje. Los errores se avisan siempre.
 notificar_fichajes: true
 
+# La última salida del día se fija según lo fichado hoy en Sesame para cumplir justo la jornada del
+# horario (suma de sus tramos: 8:30 de L a J, 6:00 el V): si entras 5 min antes, sales 5 min antes; si
+# la comida se alarga, más tarde (como mucho max_retraso_minutos sobre la hora prevista). Se calcula
+# en el momento del aviso (aviso.minutos_antes antes de la salida). Así la semana suma 40 h y los
+# días libres quedan descontados solos.
+jornada_completa:
+  activo: true
+  max_retraso_minutos: 30
+
 # Resumen por Telegram de lo que Sesame tiene registrado en la semana (también con /semana).
 resumen_semanal:
   activo: true
