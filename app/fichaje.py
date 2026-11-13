@@ -68,6 +68,23 @@ def ubicacion(cfg):
     return lat, lon
 
 
+def minutos_horario(tramos):
+    """Minutos de trabajo de un día según sus tramos de config.yml (8:30 de L a J y 6:00 el V con el horario de Sergio)."""
+    total = 0
+    for ini, fin in tramos or []:
+        a, b = dt.time.fromisoformat(ini), dt.time.fromisoformat(fin)
+        total += (b.hour * 60 + b.minute) - (a.hour * 60 + a.minute)
+    return total
+
+
+def minutos_trabajados(fichajes, ahora):
+    """Minutos entre parejas entrada/salida ("HH:MM", en orden). Si falta la última salida, cuenta hasta `ahora`."""
+    m = [int(h[:2]) * 60 + int(h[3:]) for h in fichajes]
+    if len(m) % 2:
+        m.append(ahora.hour * 60 + ahora.minute)
+    return sum(b - a for a, b in zip(m[::2], m[1::2]))
+
+
 # --- Sesame -----------------------------------------------------------------
 
 class Sesame:
@@ -387,7 +404,42 @@ class Fichaje:
               {"text": "⏰ +15 min", "callback_data": f"mas:{i}"}],
              [{"text": "🚫 Nada más hoy", "callback_data": "hoy"}]])
 
+    def falta_jornada(self, e):
+        """Antes de la última salida del día: minutos que faltan para cumplir la jornada del horario
+        (según lo que Sesame tiene registrado hoy). 0 si ya se cumple o si no se puede comprobar."""
+        if e["tipo"] != "salida" or e.get("comprobada"):
+            return 0
+        if any(x is not e and x["estado"] in ("pendiente", "avisado") and x["hora"] > e["hora"]
+               for x in self.st["eventos"]):
+            return 0  # no es la última salida (p. ej. la de comer)
+        e["comprobada"] = True  # una sola vez: si tras retrasar sigue sin cuadrar, se ficha igual
+        cfg = leer_config()
+        jornada = minutos_horario(cfg["horario"].get(DIAS[self.ahora().weekday()]))
+        if not jornada or not (cfg.get("jornada_completa") or {}).get("activo", True):
+            return 0
+        ahora = self.ahora()
+        try:
+            hoy = self.sesame.dias(ahora.date(), ahora.date()).get(ahora.date()) or {}
+        except Exception as ex:
+            log.warning("No pude leer las horas de hoy en Sesame: %s", ex)
+            return 0
+        if not hoy.get("fichajes"):
+            return 0
+        # +1 min de margen: Sesame cuenta segundos y los fichajes se ven redondeados al minuto.
+        return max(0, jornada + 1 - minutos_trabajados(hoy["fichajes"], ahora))
+
     def ejecutar(self, e):
+        falta = self.falta_jornada(e)
+        if falta:
+            maximo = int((leer_config().get("jornada_completa") or {}).get("max_retraso_minutos", 30))
+            retraso = min(falta, maximo)
+            e["hora"] = (self.ahora() + dt.timedelta(minutes=retraso, seconds=random.randint(0, 59))).isoformat()
+            texto = f"⏰ Salida retrasada a las {e['hora'][11:16]}: faltan {falta} min para la jornada de hoy."
+            if falta > maximo:
+                texto += f" Retraso solo {maximo} min (máximo): revisa los fichajes de hoy en Sesame."
+            log.info(texto)
+            self.tg.enviar(texto, silencioso=falta <= maximo)
+            return
         try:
             resultado = self.sesame.fichar(e["tipo"], ubicacion(leer_config()))
         except Exception as ex:
