@@ -26,6 +26,8 @@ servidor que esté siempre encendido (una Raspberry, un mini PC, un NAS…).
   Comandos: `/hoy`, `/semana`, `/estado`, `/nofichar`, `/reanudar`, y para días sueltos sin fichar
   `/libre <fecha> [motivo]` (2026-11-11, 11/11, mañana, miércoles…), `/quitar <fecha>` y `/libres`.
   Solo atiende al chat de `TELEGRAM_CHAT`; los días se guardan en `estado/` y se borran solos al pasar.
+- Opcional: `/actualizar` y `/actualizar si` para pedir al servidor que busque o instale imágenes nuevas de Docker
+  (ver [Peticiones al servidor](#peticiones-al-servidor-opcional)).
 - **Modo prueba** (por defecto): hace todo, pero en vez de fichar te dice lo que habría hecho.
 
 ## Requisitos
@@ -132,3 +134,24 @@ detecta y te avisa por Telegram para que fiches a mano.
 ## Licencia
 
 [MIT](LICENSE)
+
+## Peticiones al servidor (opcional)
+
+Si el mismo bot te sirve para otras cosas del servidor, el contenedor puede **pedir** acciones al host sin tener
+acceso a Docker: con `PETICIONES=/peticiones` y esa carpeta montada, `/actualizar` deja en ella un fichero vacío
+`actualizar-comprobar` y `/actualizar si` uno `actualizar-aplicar`. Solo se crean esos dos nombres fijos (el texto del
+mensaje nunca llega al host). En el host, algo tiene que vigilar la carpeta, ejecutar la acción, borrar el fichero y
+contestar por Telegram; por ejemplo una unidad systemd `.path` con `PathExistsGlob=/ruta/peticiones/actualizar-*`.
+
+Montaje con un `compose.override.yaml` (no se sube al repositorio):
+
+```yaml
+services:
+  fichaje:
+    environment:
+      - PETICIONES=/peticiones
+    volumes:
+      - ./peticiones:/peticiones
+```
+
+Crea antes la carpeta con tu usuario (`mkdir peticiones`), o Docker la creará como root y el contenedor no podrá escribir.
