@@ -32,6 +32,11 @@ PERDIDO_TRAS = dt.timedelta(minutes=15)  # pasado este margen ya no se ficha (p.
 REINTENTOS = 3
 LATIDO = "/tmp/latido"  # el bucle lo actualiza; si se queda viejo, el contenedor sale "unhealthy"
 DIAS_CORTOS = ["lun", "mar", "mié", "jue", "vie", "sáb", "dom"]
+# Opcional: carpeta compartida con el host. /actualizar deja ahí un fichero vacío con el nombre de la petición y un
+# vigilante del host (p. ej. una unidad systemd .path) hace el trabajo y contesta por su cuenta. El contenedor no
+# necesita acceso a Docker: solo puede pedir una de las acciones fijas de PETICIONES_VALIDAS.
+PETICIONES = os.environ.get("PETICIONES", "")
+PETICIONES_VALIDAS = {"actualizar-comprobar", "actualizar-aplicar"}
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("fichaje")
@@ -543,11 +548,34 @@ class Fichaje:
                 self.tg.enviar(f"🛑 No puedo leer Sesame: {e}")
         elif cmd == "/semana":
             self.tg.enviar(self.texto_semana(self.ahora().date()))
+        elif cmd == "/actualizar":
+            self.cmd_actualizar(args)
         elif cmd in ("/ayuda", "/start"):
             self.tg.enviar("/hoy plan de hoy\n/semana lo registrado en Sesame esta semana\n/estado dentro o fuera en Sesame\n"
                            "/nofichar cancela lo que queda de hoy\n/reanudar deshace /nofichar\n"
                            "/libre <fecha> [motivo] ese día no se ficha (fecha: 2026-11-11, 11/11, mañana, miércoles…)\n"
-                           "/quitar <fecha> vuelve a fichar ese día\n/libres días puestos con /libre")
+                           "/quitar <fecha> vuelve a fichar ese día\n/libres días puestos con /libre"
+                           + ("\n/actualizar mira si hay imágenes nuevas en el servidor\n/actualizar si las instala"
+                              if PETICIONES else ""))
+
+    # Peticiones al servidor (opcional, ver PETICIONES)
+
+    def cmd_actualizar(self, args):
+        if not PETICIONES or not os.path.isdir(PETICIONES):
+            self.tg.enviar("Las peticiones al servidor no están configuradas (PETICIONES).")
+            return
+        aplicar = bool(args) and norm(args[0]) in ("si", "aplicar", "ya")
+        nombre = "actualizar-aplicar" if aplicar else "actualizar-comprobar"
+        assert nombre in PETICIONES_VALIDAS
+        try:
+            with open(os.path.join(PETICIONES, nombre), "w"):
+                pass
+        except OSError as e:
+            self.tg.enviar(f"🛑 No puedo dejar la petición: {e}")
+            return
+        log.info("Petición al servidor: %s", nombre)
+        self.tg.enviar("🐳 Instalando las actualizaciones; te aviso al terminar (puede tardar unos minutos)." if aplicar
+                       else "🐳 Miro si hay actualizaciones…")
 
     # Días libres puestos por Telegram
 
